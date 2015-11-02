@@ -8,12 +8,13 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import org.sqlite.SQLiteConnection;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.Table;
 import com.google.common.collect.Tables;
 
 /**
- * 
+ *
  * <code>
 DBLite.DB.update("drop table if exists person");
 DBLite.DB.update("create table person (id integer PRIMARY KEY, name string UNIQUE)");
@@ -21,7 +22,7 @@ DBLite.DB.update("insert into person values(?, ?)", 1, "leo");
 DBLite.DB.update("insert into person values(?, ?)", 2, "yui");
 System.out.println(DBLite.DB.select("SELECT * FROM person WHERE id>?", 0));
 </code>
- * 
+ *
  * @author Benjamin Hill
  */
 public enum DBLite implements AutoCloseable {
@@ -46,11 +47,18 @@ public enum DBLite implements AutoCloseable {
     }
   }
 
+  @Override
+  public void close() throws Exception {
+    conn.close();
+  }
+
   public boolean exists() {
     return new File(FILE_NAME).canRead();
   }
 
   public long selectLong(final String sql, final Object... args) throws SQLException {
+    Preconditions.checkNotNull(sql);
+    Preconditions.checkArgument(sql.toLowerCase().contains("select"));
     try (final PreparedStatement pstmt = conn.prepareStatement(sql);) {
       for (int i = 0; i < args.length; i++) {
         pstmt.setObject(i + 1, args[i]);
@@ -65,6 +73,8 @@ public enum DBLite implements AutoCloseable {
   }
 
   public Table<?, ?, ?> selectTable(final String sql, final Object... args) {
+    Preconditions.checkNotNull(sql);
+    Preconditions.checkArgument(sql.toLowerCase().contains("select"));
     try {
       final Table<Object, Object, Object> result = HashBasedTable.create();
       try (final PreparedStatement pstmt = conn.prepareStatement(sql);) {
@@ -85,16 +95,12 @@ public enum DBLite implements AutoCloseable {
   }
 
   public int update(final String sql, final Object... args) throws SQLException {
+    Preconditions.checkNotNull(sql);
     try (final PreparedStatement pstmt = conn.prepareStatement(sql);) {
       for (int i = 0; i < args.length; i++) {
         pstmt.setObject(i + 1, args[i]);
       }
       return pstmt.executeUpdate();
     }
-  }
-
-  @Override
-  public void close() throws Exception {
-    this.conn.close();
   }
 }
