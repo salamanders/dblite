@@ -1,10 +1,11 @@
-package info.benjaminhill.imageduplicates;
+package info.benjaminhill.util;
 
 import java.io.File;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import org.sqlite.SQLiteConnection;
@@ -56,7 +57,7 @@ public enum DBLite implements AutoCloseable {
     return new File(FILE_NAME).canRead();
   }
 
-  public long selectLong(final String sql, final Object... args) throws SQLException {
+  public long selectLong(final String sql, final Object... args) {
     Preconditions.checkNotNull(sql);
     Preconditions.checkArgument(sql.toLowerCase().contains("select"));
     try (final PreparedStatement pstmt = conn.prepareStatement(sql);) {
@@ -69,10 +70,54 @@ public enum DBLite implements AutoCloseable {
         rs.next();
         return rs.getLong(1);
       }
+    } catch (final SQLException e) {
+      throw new RuntimeException(e);
     }
   }
 
-  public Table<?, ?, ?> selectTable(final String sql, final Object... args) {
+  /**
+   * Select an arbitrary table.  First column must be row identifier.
+   */
+  public Table<String, String, Object> selectTable(final String sql, final Object... args) {
+    Preconditions.checkNotNull(sql);
+    Preconditions.checkArgument(sql.toLowerCase().contains("select"));
+    try {
+      final Table<String, String, Object> result = HashBasedTable.create();
+      try (final PreparedStatement pstmt = conn.prepareStatement(sql);) {
+        for (int i = 0; i < args.length; i++) {
+          pstmt.setObject(i + 1, args[i]);
+        }
+        try (final ResultSet rs = pstmt.executeQuery()) {
+          final ResultSetMetaData rsmd = rs.getMetaData();
+          
+          final String[] columns = new String[rsmd.getColumnCount()];
+          for (int col = 0; col < columns.length; col++) {
+            columns[col] = rsmd.getColumnLabel(col + 1);
+          }
+          
+          while (rs.next()) {
+            // Start from 1, because 0 is the row ID
+            final String rowID = rs.getString(1);
+            for(int col=1; col<columns.length; col++) {
+              result.put(rowID, columns[col], rs.getObject(col+1));
+            }
+          }
+        }
+        return Tables.unmodifiableTable(result);
+      }
+    } catch (final SQLException ex) {
+      throw new RuntimeException(ex);
+    }
+  }
+  
+  
+  /**
+   * Selects a 3-column table and interprets it as "row, column, value"
+   * @param sql
+   * @param args
+   * @return
+   */
+  public Table<?, ?, ?> selectTableRCV(final String sql, final Object... args) {
     Preconditions.checkNotNull(sql);
     Preconditions.checkArgument(sql.toLowerCase().contains("select"));
     try {
@@ -94,13 +139,15 @@ public enum DBLite implements AutoCloseable {
     }
   }
 
-  public int update(final String sql, final Object... args) throws SQLException {
+  public int update(final String sql, final Object... args) {
     Preconditions.checkNotNull(sql);
     try (final PreparedStatement pstmt = conn.prepareStatement(sql);) {
       for (int i = 0; i < args.length; i++) {
         pstmt.setObject(i + 1, args[i]);
       }
       return pstmt.executeUpdate();
+    } catch (final SQLException e) {
+      throw new RuntimeException(e);
     }
   }
 }
